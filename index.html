@@ -15,6 +15,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         // Your Firebase configuration
         // REPLACE WITH YOUR ACTUAL FIREBASE CONFIG FROM FIREBASE CONSOLE
@@ -23,7 +24,7 @@
             authDomain: "pjf-supham.firebaseapp.com", // <--- REPLACE THIS
             projectId: "pjf-supham", // <--- REPLACE THIS
             storageBucket: "pjf-supham.firebasestorage.app", // <--- REPLACE THIS
-            messagingSenderId: "976353135981", // <--- REPLACE THIS
+            messagingSenderId: "976353135981, // <--- REPLACE THIS
             measurementId: "G-JXCSW4146M",
             appId: "1:976353135981:web:3f3560481080fdc5fa5e64" // <--- REPLACE THIS
         };
@@ -38,6 +39,13 @@
         window.query = query;
         window.orderBy = orderBy;
         window.serverTimestamp = serverTimestamp;
+
+        // Initialize Firebase Auth
+        window.auth = getAuth(app); // Attach auth to window object
+
+        // Export auth functions for use in React components
+        window.signInAnonymously = signInAnonymously;
+        window.onAuthStateChanged = onAuthStateChanged;
     </script>
 
     <style>
@@ -58,7 +66,7 @@
         const { useState, useEffect } = React;
 
         // Component for the IT Asset Form
-        const AssetForm = ({ onSaveSuccess, onNavigateToDisplay }) => {
+        const AssetForm = ({ onSaveSuccess, onNavigateToDisplay, isAuthReady, currentUserId }) => {
             const [formData, setFormData] = useState({
                 deviceType: '',
                 assetTag: '',
@@ -97,6 +105,13 @@
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
+                
+                if (!isAuthReady || !currentUserId) {
+                    setMessage('ข้อผิดพลาด: การยืนยันตัวตนยังไม่พร้อม โปรดลองอีกครั้ง');
+                    setSaveStatus('error');
+                    return;
+                }
+
                 setLoading(true);
                 setSaveStatus('loading');
                 setMessage('');
@@ -104,6 +119,7 @@
                 try {
                     const docRef = await window.addDoc(window.collection(window.db, "it_assets"), {
                         ...formData,
+                        userId: currentUserId, // Store the user ID with the document
                         timestamp: window.serverTimestamp()
                     });
                     setSaveStatus('success');
@@ -134,7 +150,7 @@
                     onSaveSuccess(); // Notify parent of save success
                 } catch (error) {
                     setSaveStatus('error');
-                    setMessage('เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' + error.message);
+                    setMessage('เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' + error.message + (error.code === 'permission-denied' ? ' (ตรวจสอบกฎความปลอดภัยของ Firestore)' : ''));
                     console.error('Error adding document to Firestore:', error);
                 } finally {
                     setLoading(false);
@@ -149,6 +165,11 @@
                     <p className="text-center text-gray-600 mb-8">
                         กรุณากรอกข้อมูลอุปกรณ์ IT เพื่อการบริหารจัดการและตรวจสอบที่มีประสิทธิภาพ
                     </p>
+                    {currentUserId && (
+                        <p className="text-right text-sm text-gray-500 mb-4">
+                            ผู้ใช้งานปัจจุบัน (ID): <span className="font-mono text-blue-600">{currentUserId}</span>
+                        </p>
+                    )}
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <fieldset className="border border-gray-300 p-6 rounded-md">
@@ -448,7 +469,7 @@
                             <button
                                 type="submit"
                                 className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                disabled={loading}
+                                disabled={loading || !isAuthReady}
                             >
                                 {loading ? (
                                     <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -479,12 +500,18 @@
         };
 
         // Component to display IT Assets from Firestore
-        const AssetDisplay = ({ onBackToForm }) => {
+        const AssetDisplay = ({ onBackToForm, isAuthReady, currentUserId }) => {
             const [assets, setAssets] = useState([]);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
 
             useEffect(() => {
+                if (!isAuthReady) {
+                    setLoading(true); // Keep loading until auth is ready
+                    return;
+                }
+                
+                // Only attempt to fetch data if auth is ready
                 const q = window.query(window.collection(window.db, "it_assets"), window.orderBy("timestamp", "desc"));
                 const unsubscribe = window.onSnapshot(q, (snapshot) => {
                     const fetchedAssets = [];
@@ -496,13 +523,13 @@
                     setLoading(false);
                 }, (err) => {
                     console.error("Error fetching documents: ", err);
-                    setError("ไม่สามารถโหลดข้อมูลได้: " + err.message);
+                    setError("ไม่สามารถโหลดข้อมูลได้: " + err.message + (err.code === 'permission-denied' ? ' (ตรวจสอบกฎความปลอดภัยของ Firestore)' : ''));
                     setLoading(false);
                 });
 
                 // Cleanup subscription on unmount
                 return () => unsubscribe();
-            }, []); // Empty dependency array means this runs once on mount
+            }, [isAuthReady]); // Re-run effect when auth state changes
 
             if (loading) {
                 return (
@@ -556,7 +583,8 @@
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ซีเรียล No.</th>
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ผู้ใช้งาน/แผนก</th>
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">สถานะ</th>
-                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">วันที่บันทึก</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">วันที่บันทึก</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">User ID</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
@@ -571,6 +599,7 @@
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {asset.timestamp ? new Date(asset.timestamp.seconds * 1000).toLocaleString() : 'N/A'}
                                             </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{asset.userId || 'N/A'}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -584,6 +613,34 @@
         // Main App component to manage views
         const App = () => {
             const [currentView, setCurrentView] = useState('form'); // 'form' or 'display'
+            const [isAuthReady, setIsAuthReady] = useState(false);
+            const [currentUserId, setCurrentUserId] = useState(null);
+
+            useEffect(() => {
+                // Sign in anonymously on app load
+                window.signInAnonymously(window.auth)
+                    .then((userCredential) => {
+                        console.log("Signed in anonymously:", userCredential.user.uid);
+                    })
+                    .catch((error) => {
+                        console.error("Error signing in anonymously:", error);
+                    });
+
+                // Listen for auth state changes
+                const unsubscribeAuth = window.onAuthStateChanged(window.auth, (user) => {
+                    if (user) {
+                        setCurrentUserId(user.uid);
+                        setIsAuthReady(true);
+                    } else {
+                        setCurrentUserId(null);
+                        setIsAuthReady(false);
+                        console.log("No user signed in.");
+                    }
+                });
+
+                // Cleanup auth listener on component unmount
+                return () => unsubscribeAuth();
+            }, []); // Empty dependency array means this runs once on mount
 
             const handleSaveSuccess = () => {
                 // Optionally navigate to display view after successful save
@@ -596,11 +653,15 @@
                         <AssetForm
                             onSaveSuccess={handleSaveSuccess}
                             onNavigateToDisplay={() => setCurrentView('display')}
+                            isAuthReady={isAuthReady}
+                            currentUserId={currentUserId}
                         />
                     )}
                     {currentView === 'display' && (
                         <AssetDisplay
                             onBackToForm={() => setCurrentView('form')}
+                            isAuthReady={isAuthReady}
+                            currentUserId={currentUserId}
                         />
                     )}
                 </div>
