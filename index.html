@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>แบบบันทึกข้อมูลอุปกรณ์ IT องค์กร (Firestore HTML)</title>
+    <title>แบบบันทึกและแสดงข้อมูลอุปกรณ์ IT องค์กร</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React and ReactDOM CDNs -->
@@ -14,7 +14,7 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
         // Your Firebase configuration
         // REPLACE WITH YOUR ACTUAL FIREBASE CONFIG FROM FIREBASE CONSOLE
@@ -28,13 +28,15 @@
             appId: "1:976353135981:web:3f3560481080fdc5fa5e64" // <--- REPLACE THIS
         };
 
-
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         // Get a reference to the Firestore service
         window.db = getFirestore(app); // Attach db to window object for global access in JSX script
         window.collection = collection;
         window.addDoc = addDoc;
+        window.onSnapshot = onSnapshot;
+        window.query = query;
+        window.orderBy = orderBy;
         window.serverTimestamp = serverTimestamp;
     </script>
 
@@ -53,10 +55,11 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Main App component for the IT Asset Tracking Form
-        const App = () => {
-            // State to store form data
-            const [formData, setFormData] = React.useState({
+        const { useState, useEffect } = React;
+
+        // Component for the IT Asset Form
+        const AssetForm = ({ onSaveSuccess, onNavigateToDisplay }) => {
+            const [formData, setFormData] = useState({
                 deviceType: '',
                 assetTag: '',
                 brand: '',
@@ -80,12 +83,10 @@
                 additionalNotes: ''
             });
 
-            // State for loading indicator and save status
-            const [loading, setLoading] = React.useState(false);
-            const [saveStatus, setSaveStatus] = React.useState(''); // 'success', 'error', 'loading'
-            const [message, setMessage] = React.useState(''); // Message to display to the user
+            const [loading, setLoading] = useState(false);
+            const [saveStatus, setSaveStatus] = useState(''); // 'success', 'error', 'loading'
+            const [message, setMessage] = useState(''); // Message to display to the user
 
-            // Handle input changes for form fields
             const handleChange = (e) => {
                 const { name, value } = e.target;
                 setFormData(prevData => ({
@@ -94,7 +95,6 @@
                 }));
             };
 
-            // Handle form submission
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 setLoading(true);
@@ -102,15 +102,13 @@
                 setMessage('');
 
                 try {
-                    // Access Firestore functions from the global window object
                     const docRef = await window.addDoc(window.collection(window.db, "it_assets"), {
                         ...formData,
-                        timestamp: window.serverTimestamp() // Add a server-generated timestamp
+                        timestamp: window.serverTimestamp()
                     });
                     setSaveStatus('success');
                     setMessage(`บันทึกข้อมูลสำเร็จ! Document ID: ${docRef.id}`);
-                    // Clear the form after successful submission
-                    setFormData({
+                    setFormData({ // Clear form after successful submission
                         deviceType: '',
                         assetTag: '',
                         brand: '',
@@ -133,7 +131,7 @@
                         repairDetails: '',
                         additionalNotes: ''
                     });
-
+                    onSaveSuccess(); // Notify parent of save success
                 } catch (error) {
                     setSaveStatus('error');
                     setMessage('เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' + error.message);
@@ -144,344 +142,471 @@
             };
 
             return (
-                <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-                    <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-4xl">
-                        <h1 className="text-3xl font-bold text-center text-gray-800 mb-6">
-                            แบบบันทึกข้อมูลอุปกรณ์ IT องค์กร
-                        </h1>
-                        <p className="text-center text-gray-600 mb-8">
-                            กรุณากรอกข้อมูลอุปกรณ์ IT เพื่อการบริหารจัดการและตรวจสอบที่มีประสิทธิภาพ
-                        </p>
+                <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-4xl">
+                    <h1 className="text-3xl font-bold text-center text-gray-800 mb-6">
+                        แบบบันทึกข้อมูลอุปกรณ์ IT องค์กร
+                    </h1>
+                    <p className="text-center text-gray-600 mb-8">
+                        กรุณากรอกข้อมูลอุปกรณ์ IT เพื่อการบริหารจัดการและตรวจสอบที่มีประสิทธิภาพ
+                    </p>
 
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            {/* Section: General Device Information */}
-                            <fieldset className="border border-gray-300 p-6 rounded-md">
-                                <legend className="text-lg font-semibold text-gray-700 px-2">ข้อมูลทั่วไปของอุปกรณ์</legend>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                    <div>
-                                        <label htmlFor="deviceType" className="block text-sm font-medium text-gray-700">ประเภทอุปกรณ์ <span className="text-red-500">*</span></label>
-                                        <select
-                                            id="deviceType"
-                                            name="deviceType"
-                                            value={formData.deviceType}
-                                            onChange={handleChange}
-                                            required
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                        >
-                                            <option value="">เลือกประเภทอุปกรณ์</option>
-                                            <option value="Desktop PC">คอมพิวเตอร์ตั้งโต๊ะ</option>
-                                            <option value="Laptop">โน้ตบุ๊ก</option>
-                                            <option value="Server">เซิร์ฟเวอร์</option>
-                                            <option value="Monitor">จอภาพ</option>
-                                            <option value="Printer">ปริ้นเตอร์</option>
-                                            <option value="Network Device">อุปกรณ์เครือข่าย</option>
-                                            <option value="IP Phone">โทรศัพท์ IP</option>
-                                            <option value="Other Accessories">อุปกรณ์เสริมอื่นๆ</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label htmlFor="assetTag" className="block text-sm font-medium text-gray-700">ชื่ออุปกรณ์ / รหัส Asset Tag <span className="text-red-500">*</span></label>
-                                        <input
-                                            type="text"
-                                            id="assetTag"
-                                            name="assetTag"
-                                            value={formData.assetTag}
-                                            onChange={handleChange}
-                                            required
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น PC-001, LPT-005"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="brand" className="block text-sm font-medium text-gray-700">ยี่ห้อ <span className="text-red-500">*</span></label>
-                                        <input
-                                            type="text"
-                                            id="brand"
-                                            name="brand"
-                                            value={formData.brand}
-                                            onChange={handleChange}
-                                            required
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น Dell, HP, Lenovo"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="model" className="block text-sm font-medium text-gray-700">รุ่น <span className="text-red-500">*</span></label>
-                                        <input
-                                            type="text"
-                                            id="model"
-                                            name="model"
-                                            value={formData.model}
-                                            onChange={handleChange}
-                                            required
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น Latitude 7420, ProDesk 400 G7"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="serialNumber" className="block text-sm font-medium text-gray-700">หมายเลขซีเรียล (Serial Number) <span className="text-red-500">*</span></label>
-                                        <input
-                                            type="text"
-                                            id="serialNumber"
-                                            name="serialNumber"
-                                            value={formData.serialNumber}
-                                            onChange={handleChange}
-                                            required
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="กรอกหมายเลขซีเรียล"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="receiveDate" className="block text-sm font-medium text-gray-700">วันที่รับเข้า / วันที่ติดตั้ง <span className="text-red-500">*</span></label>
-                                        <input
-                                            type="date"
-                                            id="receiveDate"
-                                            name="receiveDate"
-                                            value={formData.receiveDate}
-                                            onChange={handleChange}
-                                            required
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="status" className="block text-sm font-medium text-gray-700">สถานะปัจจุบัน <span className="text-red-500">*</span></label>
-                                        <select
-                                            id="status"
-                                            name="status"
-                                            value={formData.status}
-                                            onChange={handleChange}
-                                            required
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                        >
-                                            <option value="In Use">ใช้งานปกติ</option>
-                                            <option value="Spare">สำรอง</option>
-                                            <option value="Under Repair">ส่งซ่อม</option>
-                                            <option value="Pending Disposal">รอจำหน่าย</option>
-                                            <option value="Disposed">จำหน่ายแล้ว</option>
-                                            <option value="Lost">สูญหาย</option>
-                                        </select>
-                                    </div>
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <fieldset className="border border-gray-300 p-6 rounded-md">
+                            <legend className="text-lg font-semibold text-gray-700 px-2">ข้อมูลทั่วไปของอุปกรณ์</legend>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div>
+                                    <label htmlFor="deviceType" className="block text-sm font-medium text-gray-700">ประเภทอุปกรณ์ <span className="text-red-500">*</span></label>
+                                    <select
+                                        id="deviceType"
+                                        name="deviceType"
+                                        value={formData.deviceType}
+                                        onChange={handleChange}
+                                        required
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                    >
+                                        <option value="">เลือกประเภทอุปกรณ์</option>
+                                        <option value="Desktop PC">คอมพิวเตอร์ตั้งโต๊ะ</option>
+                                        <option value="Laptop">โน้ตบุ๊ก</option>
+                                        <option value="Server">เซิร์ฟเวอร์</option>
+                                        <option value="Monitor">จอภาพ</option>
+                                        <option value="Printer">ปริ้นเตอร์</option>
+                                        <option value="Network Device">อุปกรณ์เครือข่าย</option>
+                                        <option value="IP Phone">โทรศัพท์ IP</option>
+                                        <option value="Other Accessories">อุปกรณ์เสริมอื่นๆ</option>
+                                    </select>
                                 </div>
-                            </fieldset>
-
-                            {/* Section: Specifications (for Computers/Servers) */}
-                            <fieldset className="border border-gray-300 p-6 rounded-md">
-                                <legend className="text-lg font-semibold text-gray-700 px-2">ข้อมูลจำเพาะ (สำหรับคอมพิวเตอร์/เซิร์ฟเวอร์)</legend>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                    <div>
-                                        <label htmlFor="os" className="block text-sm font-medium text-gray-700">ระบบปฏิบัติการ (OS)</label>
-                                        <input
-                                            type="text"
-                                            id="os"
-                                            name="os"
-                                            value={formData.os}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น Windows 11 Pro, macOS Ventura"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="cpu" className="block text-sm font-medium text-gray-700">หน่วยประมวลผล (CPU)</label>
-                                        <input
-                                            type="text"
-                                            id="cpu"
-                                            name="cpu"
-                                            value={formData.cpu}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น Intel Core i7-12700, AMD Ryzen 7 5800X"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="ram" className="block text-sm font-medium text-gray-700">หน่วยความจำ (RAM)</label>
-                                        <input
-                                            type="text"
-                                            id="ram"
-                                            name="ram"
-                                            value={formData.ram}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น 16GB DDR4, 32GB DDR5"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="storage" className="block text-sm font-medium text-gray-700">หน่วยเก็บข้อมูล (Storage)</label>
-                                        <input
-                                            type="text"
-                                            id="storage"
-                                            name="storage"
-                                            value={formData.storage}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น 512GB NVMe SSD, 1TB HDD"
-                                        />
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <label htmlFor="graphicsCard" className="block text-sm font-medium text-gray-700">การ์ดจอ (Graphics Card)</label>
-                                        <input
-                                            type="text"
-                                            id="graphicsCard"
-                                            name="graphicsCard"
-                                            value={formData.graphicsCard}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น NVIDIA GeForce RTX 3060, Intel Iris Xe"
-                                        />
-                                    </div>
+                                <div>
+                                    <label htmlFor="assetTag" className="block text-sm font-medium text-gray-700">ชื่ออุปกรณ์ / รหัส Asset Tag <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        id="assetTag"
+                                        name="assetTag"
+                                        value={formData.assetTag}
+                                        onChange={handleChange}
+                                        required
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น PC-001, LPT-005"
+                                    />
                                 </div>
-                            </fieldset>
-
-                            {/* Section: Usage / Responsibility Information */}
-                            <fieldset className="border border-gray-300 p-6 rounded-md">
-                                <legend className="text-lg font-semibold text-gray-700 px-2">ข้อมูลการใช้งาน / ผู้รับผิดชอบ</legend>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                    <div>
-                                        <label htmlFor="primaryUser" className="block text-sm font-medium text-gray-700">ผู้ใช้งานหลัก / แผนก</label>
-                                        <input
-                                            type="text"
-                                            id="primaryUser"
-                                            name="primaryUser"
-                                            value={formData.primaryUser}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น นายสมชาย, แผนกบัญชี"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="location" className="block text-sm font-medium text-gray-700">สถานที่ติดตั้ง / ห้อง</label>
-                                        <input
-                                            type="text"
-                                            id="location"
-                                            name="location"
-                                            value={formData.location}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น ชั้น 3 ห้องประชุม, ออฟฟิศใหญ่"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="ipAddress" className="block text-sm font-medium text-gray-700">IP Address</label>
-                                        <input
-                                            type="text"
-                                            id="ipAddress"
-                                            name="ipAddress"
-                                            value={formData.ipAddress}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น 192.168.1.100"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="macAddress" className="block text-sm font-medium text-gray-700">Mac Address</label>
-                                        <input
-                                            type="text"
-                                            id="macAddress"
-                                            name="macAddress"
-                                            value={formData.macAddress}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น 00:1A:2B:3C:4D:5E"
-                                        />
-                                    </div>
+                                <div>
+                                    <label htmlFor="brand" className="block text-sm font-medium text-gray-700">ยี่ห้อ <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        id="brand"
+                                        name="brand"
+                                        value={formData.brand}
+                                        onChange={handleChange}
+                                        required
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น Dell, HP, Lenovo"
+                                    />
                                 </div>
-                            </fieldset>
-
-                            {/* Section: Maintenance / History Information */}
-                            <fieldset className="border border-gray-300 p-6 rounded-md">
-                                <legend className="text-lg font-semibold text-gray-700 px-2">ข้อมูลการบำรุงรักษา / ประวัติ</legend>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                    <div>
-                                        <label htmlFor="lastMaintenanceDate" className="block text-sm font-medium text-gray-700">วันที่บำรุงรักษาล่าสุด</label>
-                                        <input
-                                            type="date"
-                                            id="lastMaintenanceDate"
-                                            name="lastMaintenanceDate"
-                                            value={formData.lastMaintenanceDate}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                        />
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <label htmlFor="maintenanceDetails" className="block text-sm font-medium text-gray-700">รายละเอียดการบำรุงรักษาล่าสุด</label>
-                                        <textarea
-                                            id="maintenanceDetails"
-                                            name="maintenanceDetails"
-                                            value={formData.maintenanceDetails}
-                                            onChange={handleChange}
-                                            rows="3"
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น ทำความสะอาดภายใน, เปลี่ยนซิลิโคน CPU"
-                                        ></textarea>
-                                    </div>
-                                    <div>
-                                        <label htmlFor="lastRepairDate" className="block text-sm font-medium text-gray-700">วันที่ซ่อมล่าสุด</label>
-                                        <input
-                                            type="date"
-                                            id="lastRepairDate"
-                                            name="lastRepairDate"
-                                            value={formData.lastRepairDate}
-                                            onChange={handleChange}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                        />
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <label htmlFor="repairDetails" className="block text-sm font-medium text-gray-700">รายละเอียดการซ่อมล่าสุด</label>
-                                        <textarea
-                                            id="repairDetails"
-                                            name="repairDetails"
-                                            value={formData.repairDetails}
-                                            onChange={handleChange}
-                                            rows="3"
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="เช่น เปลี่ยน Hard Drive, ซ่อมพอร์ต USB"
-                                        ></textarea>
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <label htmlFor="additionalNotes" className="block text-sm font-medium text-gray-700">หมายเหตุเพิ่มเติม</label>
-                                        <textarea
-                                            id="additionalNotes"
-                                            name="additionalNotes"
-                                            value={formData.additionalNotes}
-                                            onChange={handleChange}
-                                            rows="4"
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="ข้อมูลอื่นๆ ที่เกี่ยวข้อง"
-                                        ></textarea>
-                                    </div>
+                                <div>
+                                    <label htmlFor="model" className="block text-sm font-medium text-gray-700">รุ่น <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        id="model"
+                                        name="model"
+                                        value={formData.model}
+                                        onChange={handleChange}
+                                        required
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น Latitude 7420, ProDesk 400 G7"
+                                    />
                                 </div>
-                            </fieldset>
-
-                            {/* Submit Button */}
-                            <div className="flex justify-center mt-6">
-                                <button
-                                    type="submit"
-                                    className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                    disabled={loading}
-                                >
-                                    {loading ? (
-                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                    ) : (
-                                        'บันทึกข้อมูลลง Firestore'
-                                    )}
-                                </button>
+                                <div>
+                                    <label htmlFor="serialNumber" className="block text-sm font-medium text-gray-700">หมายเลขซีเรียล (Serial Number) <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        id="serialNumber"
+                                        name="serialNumber"
+                                        value={formData.serialNumber}
+                                        onChange={handleChange}
+                                        required
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="กรอกหมายเลขซีเรียล"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="receiveDate" className="block text-sm font-medium text-gray-700">วันที่รับเข้า / วันที่ติดตั้ง <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="date"
+                                        id="receiveDate"
+                                        name="receiveDate"
+                                        value={formData.receiveDate}
+                                        onChange={handleChange}
+                                        required
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="status" className="block text-sm font-medium text-gray-700">สถานะปัจจุบัน <span className="text-red-500">*</span></label>
+                                    <select
+                                        id="status"
+                                        name="status"
+                                        value={formData.status}
+                                        onChange={handleChange}
+                                        required
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                    >
+                                        <option value="In Use">ใช้งานปกติ</option>
+                                        <option value="Spare">สำรอง</option>
+                                        <option value="Under Repair">ส่งซ่อม</option>
+                                        <option value="Pending Disposal">รอจำหน่าย</option>
+                                        <option value="Disposed">จำหน่ายแล้ว</option>
+                                        <option value="Lost">สูญหาย</option>
+                                    </select>
+                                </div>
                             </div>
-                        </form>
+                        </fieldset>
 
-                        {/* Save Status Message */}
-                        {message && (
-                            <div className={`mt-8 p-6 rounded-md shadow-inner ${saveStatus === 'success' ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
-                                <p className="font-semibold">{message}</p>
+                        <fieldset className="border border-gray-300 p-6 rounded-md">
+                            <legend className="text-lg font-semibold text-gray-700 px-2">ข้อมูลจำเพาะ (สำหรับคอมพิวเตอร์/เซิร์ฟเวอร์)</legend>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div>
+                                    <label htmlFor="os" className="block text-sm font-medium text-gray-700">ระบบปฏิบัติการ (OS)</label>
+                                    <input
+                                        type="text"
+                                        id="os"
+                                        name="os"
+                                        value={formData.os}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น Windows 11 Pro, macOS Ventura"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="cpu" className="block text-sm font-medium text-gray-700">หน่วยประมวลผล (CPU)</label>
+                                    <input
+                                        type="text"
+                                        id="cpu"
+                                        name="cpu"
+                                        value={formData.cpu}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น Intel Core i7-12700, AMD Ryzen 7 5800X"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="ram" className="block text-sm font-medium text-gray-700">หน่วยความจำ (RAM)</label>
+                                    <input
+                                        type="text"
+                                        id="ram"
+                                        name="ram"
+                                        value={formData.ram}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น 16GB DDR4, 32GB DDR5"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="storage" className="block text-sm font-medium text-gray-700">หน่วยเก็บข้อมูล (Storage)</label>
+                                    <input
+                                        type="text"
+                                        id="storage"
+                                        name="storage"
+                                        value={formData.storage}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น 512GB NVMe SSD, 1TB HDD"
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label htmlFor="graphicsCard" className="block text-sm font-medium text-gray-700">การ์ดจอ (Graphics Card)</label>
+                                    <input
+                                        type="text"
+                                        id="graphicsCard"
+                                        name="graphicsCard"
+                                        value={formData.graphicsCard}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น NVIDIA GeForce RTX 3060, Intel Iris Xe"
+                                    />
+                                </div>
                             </div>
-                        )}
-                    </div>
+                        </fieldset>
+
+                        <fieldset className="border border-gray-300 p-6 rounded-md">
+                            <legend className="text-lg font-semibold text-gray-700 px-2">ข้อมูลการใช้งาน / ผู้รับผิดชอบ</legend>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div>
+                                    <label htmlFor="primaryUser" className="block text-sm font-medium text-gray-700">ผู้ใช้งานหลัก / แผนก</label>
+                                    <input
+                                        type="text"
+                                        id="primaryUser"
+                                        name="primaryUser"
+                                        value={formData.primaryUser}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น นายสมชาย, แผนกบัญชี"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="location" className="block text-sm font-medium text-gray-700">สถานที่ติดตั้ง / ห้อง</label>
+                                    <input
+                                        type="text"
+                                        id="location"
+                                        name="location"
+                                        value={formData.location}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น ชั้น 3 ห้องประชุม, ออฟฟิศใหญ่"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="ipAddress" className="block text-sm font-medium text-gray-700">IP Address</label>
+                                    <input
+                                        type="text"
+                                        id="ipAddress"
+                                        name="ipAddress"
+                                        value={formData.ipAddress}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น 192.168.1.100"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="macAddress" className="block text-sm font-medium text-gray-700">Mac Address</label>
+                                    <input
+                                        type="text"
+                                        id="macAddress"
+                                        name="macAddress"
+                                        value={formData.macAddress}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น 00:1A:2B:3C:4D:5E"
+                                    />
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <fieldset className="border border-gray-300 p-6 rounded-md">
+                            <legend className="text-lg font-semibold text-gray-700 px-2">ข้อมูลการบำรุงรักษา / ประวัติ</legend>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div>
+                                    <label htmlFor="lastMaintenanceDate" className="block text-sm font-medium text-gray-700">วันที่บำรุงรักษาล่าสุด</label>
+                                    <input
+                                        type="date"
+                                        id="lastMaintenanceDate"
+                                        name="lastMaintenanceDate"
+                                        value={formData.lastMaintenanceDate}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label htmlFor="maintenanceDetails" className="block text-sm font-medium text-gray-700">รายละเอียดการบำรุงรักษาล่าสุด</label>
+                                    <textarea
+                                        id="maintenanceDetails"
+                                        name="maintenanceDetails"
+                                        value={formData.maintenanceDetails}
+                                        onChange={handleChange}
+                                        rows="3"
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น ทำความสะอาดภายใน, เปลี่ยนซิลิโคน CPU"
+                                    ></textarea>
+                                </div>
+                                <div>
+                                    <label htmlFor="lastRepairDate" className="block text-sm font-medium text-gray-700">วันที่ซ่อมล่าสุด</label>
+                                    <input
+                                        type="date"
+                                        id="lastRepairDate"
+                                        name="lastRepairDate"
+                                        value={formData.lastRepairDate}
+                                        onChange={handleChange}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label htmlFor="repairDetails" className="block text-sm font-medium text-gray-700">รายละเอียดการซ่อมล่าสุด</label>
+                                    <textarea
+                                        id="repairDetails"
+                                        name="repairDetails"
+                                        value={formData.repairDetails}
+                                        onChange={handleChange}
+                                        rows="3"
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="เช่น เปลี่ยน Hard Drive, ซ่อมพอร์ต USB"
+                                    ></textarea>
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label htmlFor="additionalNotes" className="block text-sm font-medium text-gray-700">หมายเหตุเพิ่มเติม</label>
+                                    <textarea
+                                        id="additionalNotes"
+                                        name="additionalNotes"
+                                        value={formData.additionalNotes}
+                                        onChange={handleChange}
+                                        rows="4"
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        placeholder="ข้อมูลอื่นๆ ที่เกี่ยวข้อง"
+                                    ></textarea>
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <div className="flex justify-center mt-6 gap-4">
+                            <button
+                                type="submit"
+                                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                ) : (
+                                    'บันทึกข้อมูลลง Firestore'
+                                )}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onNavigateToDisplay}
+                                className="inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            >
+                                ดูข้อมูลอุปกรณ์ทั้งหมด
+                            </button>
+                        </div>
+                    </form>
+
+                    {message && (
+                        <div className={`mt-8 p-6 rounded-md shadow-inner ${saveStatus === 'success' ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
+                            <p className="font-semibold">{message}</p>
+                        </div>
+                    )}
                 </div>
             );
         };
 
-        // Render the App component to the root div
+        // Component to display IT Assets from Firestore
+        const AssetDisplay = ({ onBackToForm }) => {
+            const [assets, setAssets] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                const q = window.query(window.collection(window.db, "it_assets"), window.orderBy("timestamp", "desc"));
+                const unsubscribe = window.onSnapshot(q, (snapshot) => {
+                    const fetchedAssets = [];
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        fetchedAssets.push({ id: doc.id, ...data });
+                    });
+                    setAssets(fetchedAssets);
+                    setLoading(false);
+                }, (err) => {
+                    console.error("Error fetching documents: ", err);
+                    setError("ไม่สามารถโหลดข้อมูลได้: " + err.message);
+                    setLoading(false);
+                });
+
+                // Cleanup subscription on unmount
+                return () => unsubscribe();
+            }, []); // Empty dependency array means this runs once on mount
+
+            if (loading) {
+                return (
+                    <div className="flex justify-center items-center h-full">
+                        <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p className="ml-3 text-gray-700">กำลังโหลดข้อมูล...</p>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+                        <strong className="font-bold">ข้อผิดพลาด!</strong>
+                        <span className="block sm:inline"> {error}</span>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-6xl">
+                    <h1 className="text-3xl font-bold text-center text-gray-800 mb-6">
+                        ข้อมูลอุปกรณ์ IT ทั้งหมด
+                    </h1>
+                    <div className="flex justify-start mb-6">
+                        <button
+                            type="button"
+                            onClick={onBackToForm}
+                            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                            <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                            </svg>
+                            กลับไปหน้ากรอกข้อมูล
+                        </button>
+                    </div>
+
+                    {assets.length === 0 ? (
+                        <p className="text-center text-gray-600">ยังไม่มีข้อมูลอุปกรณ์ในระบบ.</p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200 shadow-sm rounded-lg">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tl-lg">Asset Tag</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ประเภท</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ยี่ห้อ/รุ่น</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ซีเรียล No.</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ผู้ใช้งาน/แผนก</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">สถานะ</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">วันที่บันทึก</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {assets.map(asset => (
+                                        <tr key={asset.id}>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{asset.assetTag}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{asset.deviceType}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{asset.brand} {asset.model}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{asset.serialNumber}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{asset.primaryUser}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{asset.status}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {asset.timestamp ? new Date(asset.timestamp.seconds * 1000).toLocaleString() : 'N/A'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // Main App component to manage views
+        const App = () => {
+            const [currentView, setCurrentView] = useState('form'); // 'form' or 'display'
+
+            const handleSaveSuccess = () => {
+                // Optionally navigate to display view after successful save
+                // setCurrentView('display');
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                    {currentView === 'form' && (
+                        <AssetForm
+                            onSaveSuccess={handleSaveSuccess}
+                            onNavigateToDisplay={() => setCurrentView('display')}
+                        />
+                    )}
+                    {currentView === 'display' && (
+                        <AssetDisplay
+                            onBackToForm={() => setCurrentView('form')}
+                        />
+                    )}
+                </div>
+            );
+        };
+
         ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
